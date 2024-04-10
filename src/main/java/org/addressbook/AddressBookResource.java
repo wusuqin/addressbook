@@ -5,6 +5,9 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.addressbook.service.AuthService;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.resteasy.annotations.jaxrs.HeaderParam;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Node;
@@ -16,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.addressbook.service.CarddavPropservice;
 
 @Retention(RetentionPolicy.RUNTIME)
 @HttpMethod("PROPFIND")
@@ -36,16 +40,10 @@ import java.util.Objects;
 public class AddressBookResource {
 
     @Inject
-    AddressBookService addressBookService;
+    AuthService authService;
 
     @Inject
-    ApplicationProperties properties;
-
-    @Inject
-    CarddavPropService carddavPropService;
-
-    @Inject
-    UserInfoRepository userInfoRepository;
+    CarddavPropservice carddavPropService;
 
     static final String BAD_AUTH = "bad username or password";
 
@@ -61,7 +59,7 @@ public class AddressBookResource {
         if (Objects.isNull(security)) {
             return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos -Password Required\"").build();
         } else {
-            var abAuthEntity = addressBookService.checkAuthResult(security);
+            var abAuthEntity = authService.checkAuthResult(security);
             if(abAuthEntity == null) {
                 return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
             }
@@ -182,7 +180,7 @@ public class AddressBookResource {
         }
     }
 
-	/*@MKCOL
+	@MKCOL
 	@Path("/{id}")
 	@Produces(MediaType.TEXT_PLAIN)
 	public Response createAddressbook(@HeaderParam("Authorization") String security,
@@ -202,7 +200,7 @@ public class AddressBookResource {
 				return ie.getResponse();
 			}
 		}
-	}*/
+	}
 
     /*@DELETE
     @Path("/{id}/")
