@@ -1,0 +1,3 @@
+app:
+  carddav:
+    location: /opt/addressbook/data/
