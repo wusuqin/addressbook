@@ -5,6 +5,6 @@ import io.smallrye.config.WithName;
 
 @ConfigMapping(prefix = "app")
 public interface ApplicationProperties {
-    @WithName("cardav.location")
+    @WithName("carddav.location")
     String addressbookLocation();
 }

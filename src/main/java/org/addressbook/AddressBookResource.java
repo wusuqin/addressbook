@@ -6,12 +6,11 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.addressbook.service.AuthService;
+import org.addressbook.service.CarddavMkcolService;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import org.jboss.resteasy.annotations.jaxrs.HeaderParam;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Node;
-import org.service.ApplicationProperties;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -45,34 +44,37 @@ public class AddressBookResource {
     @Inject
     CarddavPropservice carddavPropService;
 
+    @Inject
+    CarddavMkcolService carddavMkcolService;
+
+    static final String SERVER = "personal addressbook service";
+
     static final String BAD_AUTH = "bad username or password";
 
     @PROPFIND
-    @Path("/{id}/")
+    @Path("/{collectId}/")
     @Consumes({MediaType.APPLICATION_XML, MediaType.TEXT_XML, MediaType.TEXT_HTML})
     @Produces(MediaType.TEXT_XML)
     @Operation(description = "截获认证报文")
     public Response authMessageIntercept(@HeaderParam("Authorization") String security,
                                          @HeaderParam("Depth") Integer depth,
-                                         @PathParam("id") String aoid,
+                                         @PathParam("collectId") String collectId,
                                          String body) {
         if (Objects.isNull(security)) {
             return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos -Password Required\"").build();
         } else {
-            var abAuthEntity = authService.checkAuthResult(security);
-            if(abAuthEntity == null) {
+            if(! authService.checkAuthResult(security)) {
                 return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
             }
-            var user = userInfoRepository.findByUserId(Long.valueOf(abAuthEntity.getUserId()));
             var doc = Jsoup.parse(body);
             var nodes = carddavPropService.getPropFindProps(doc.childNodes(), "propfind");
             List<Node> listResponse = new ArrayList<>();
             for(int i=0;i<= depth;i++) {
-                listResponse.addAll(carddavPropService.getRootProp(nodes, user.getAoId(),i+1, null));
+                listResponse.addAll(carddavPropService.getRootProp(nodes, collectId,i+1, null));
             }
             var document = carddavPropService.documentGen(listResponse);
             return Response.status(207).header("DAV","1, 2, 3, addressbook, extended-mkcol").
-                    header("Server", "eulixos").entity(document.outerHtml()).build();
+                    header("Server", SERVER).entity(document.outerHtml()).build();
         }
     }
 
@@ -86,20 +88,18 @@ public class AddressBookResource {
         if (Objects.isNull(security)) {
             return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos-Password Required\"").build();
         } else {
-            var abAuthEntity = addressBookService.checkAuthResult(security);
-            if(abAuthEntity == null) {
+            if(!authService.checkAuthResult(security)) {
                 return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
             }
-            var user = userInfoRepository.findByUserId(Long.valueOf(abAuthEntity.getUserId()));
             var doc = Jsoup.parse(body);
             var nodes = carddavPropService.getPropFindProps(doc.childNodes(), "propfind");
             List<Node> listResponse = new ArrayList<>();
             for(int i=0;i<= depth;i++) {
-                listResponse.addAll(carddavPropService.getRootProp(nodes, user.getAoId(),i,null));
+                //listResponse.addAll(carddavPropService.getRootProp(nodes, user.getAoId(),i,null));
             }
             var document = carddavPropService.documentGen(listResponse);
             return Response.status(207).header("DAV", "1, 2, 3, addressbook, extended-mkcol").
-                    header("server", "eulixos").
+                    header("server", SERVER).
                     entity(document.outerHtml()).build();
         }
     }
@@ -111,15 +111,14 @@ public class AddressBookResource {
         if (Objects.isNull(security)) {
             return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos -Password Required\"").build();
         }  else {
-            var abAuthEntity = addressBookService.checkAuthResult(security);
-            if(abAuthEntity == null) {
+            if(!authService.checkAuthResult(security)) {
                 return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
             }
             return Response.status(200).
                     header("Allow", "DELETE, GET, HEAD, MERGE, MKCALENDAR, MKCOL, MOVE, OPTIONS, POST, PROPFIND, PROPPATCH, PUT, REPORT").
                     header("DAV","1, 2, 3, addressbook, extended-mkcol").
                     header("content-length", 0).
-                    header("Server","eulixos").
+                    header("Server",SERVER).
                     build();
         }
     }
@@ -132,7 +131,7 @@ public class AddressBookResource {
                                @PathParam("id") String aoId, @PathParam("vcfile") String vcFile, String body) {
         var value= carddavPropService.checkVcf(ifNoneMatch, ifMatch, aoId, vcFile, body);
         var status = Integer.valueOf(value.get(0));
-        Response.ResponseBuilder builder = Response.status(status).header("Server", "eulixos");
+        Response.ResponseBuilder builder = Response.status(status).header("Server", SERVER);
         if(value.size() >= 2 && !StringUtil.isNullOrEmpty(value.get(1))) {
             builder.header("Etag", "\""+value.get(1) + "\"");
         }
@@ -143,25 +142,24 @@ public class AddressBookResource {
     }
 
     @REPORT
-    @Path("/{id}/")
+    @Path("/{collectId}/")
     @Consumes({MediaType.APPLICATION_XML, MediaType.TEXT_XML, MediaType.TEXT_HTML})
     @Produces(MediaType.TEXT_XML)
     public Response reportVcfFile(@HeaderParam("Depth") Integer depth,
-                                  @PathParam("id") String aoId, String body) {
-        var user = userInfoRepository.findByAoId(aoId);
+                                  @PathParam("collectId") String collectId, String body) {
         var doc = Jsoup.parse(body);
         var nodesSync = carddavPropService.getReportProps(doc.childNodes(), "sync-collection");
         if(nodesSync.size() > 0) {
-            var document = carddavPropService.documentGen(carddavPropService.getSyncValue(nodesSync, user.getAoId()));
-            return Response.status(207).header("Server", "eulixos").entity(document.outerHtml()).build();
+            var document = carddavPropService.documentGen(carddavPropService.getSyncValue(nodesSync, collectId));
+            return Response.status(207).header("Server", SERVER).entity(document.outerHtml()).build();
         }
         var nodes = carddavPropService.getReportProps(doc.childNodes(), "card:addressbook-multiget");
         if(nodes.size() > 0){
-            var document = carddavPropService.documentGen(carddavPropService.getAddressMulti(nodes, user.getAoId()));
+            var document = carddavPropService.documentGen(carddavPropService.getAddressMulti(nodes, collectId));
             var html = document.outerHtml();
-            return Response.status(207).header("Server", "eulixos").header("Content-Length", html.getBytes(StandardCharsets.UTF_8).length).entity(html).build();
+            return Response.status(207).header("Server", SERVER).header("Content-Length", html.getBytes(StandardCharsets.UTF_8).length).entity(html).build();
         }
-        return Response.status(207).header("Server", "eulixos").build();
+        return Response.status(207).header("Server", SERVER).build();
     }
 
     @DELETE
@@ -172,7 +170,7 @@ public class AddressBookResource {
         var code = carddavPropService.deleteVcf(aoId, ifMatch,vcFile);
         if(code.equals("200")) {
             var document = carddavPropService.documentGen(List.of(carddavPropService.deletVcfResponse(aoId, vcFile, "HTTP/1.1 200 OK")));
-            return Response.status(200).header("Server", "Eulixos").entity(document.outerHtml()).build();
+            return Response.status(200).header("Server", SERVER).entity(document.outerHtml()).build();
         } else if (code.equals("412")) {
             return Response.status(Integer.valueOf(code)).entity("").build();
         } else{
@@ -181,24 +179,23 @@ public class AddressBookResource {
     }
 
 	@MKCOL
-	@Path("/{id}")
+	@Path("/{collectId}")
 	@Produces(MediaType.TEXT_PLAIN)
 	public Response createAddressbook(@HeaderParam("Authorization") String security,
-									  @PathParam("id") String id,  String body){
+									  @PathParam("collectId") String collectId,  String body){
 		if (Objects.isNull(security)) {
 			return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos -Password Required\"").build();
 		}  else {
-			var abAuthEntity = addressBookService.checkAuthResult(security);
-			if(abAuthEntity == null) {
+			if(!authService.checkAuthResult(security)) {
 				return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
 			}
-			try {
-				var user = properties.radicaleapiAuth().split(":")[0];
-				return cardDavService.createAddessbook(addressBookService.authInfo(), user, id,
-						body.replace("<href>"+ADDRESSBOOK_PATH + "/", "<href>/" + user + "/"));
-			} catch (ResteasyWebApplicationException ie) {
-				return ie.getResponse();
-			}
+            if(carddavMkcolService.mkColCollect(collectId,body)) {
+                var doc =Jsoup.parse(body);
+                carddavMkcolService.getMkcolProps(doc.childNodes(), collectId);
+                return Response.status(201).build();
+            }else{
+                return Response.status(405).entity("The method is not allowed on the requested resource.").build();
+            }
 		}
 	}
 
@@ -209,14 +206,14 @@ public class AddressBookResource {
         if (Objects.isNull(security)) {
             return Response.status(401).header("WWW-Authenticate", "Basic realm=\"Eulixos -Password Required\"").build();
         }else {
-            var abAuthEntity = addressBookService.checkAuthResult(security);
+            var abAuthEntity = authService.checkAuthResult(security);
             if(abAuthEntity == null) {
                 return Response.status(Response.Status.FORBIDDEN).entity(BAD_AUTH).build();
             }
             try {
                 var user = properties.radicaleapiAuth().split(":")[0];
                 //删除collection
-                return cardDavService.deleteAddressBookCollection(addressBookService.authInfo(), user, id );
+                return cardDavService.deleteAddressBookCollection(authService.authInfo(), user, id );
             } catch (ResteasyWebApplicationException ie) {
                 return ie.getResponse();
             }

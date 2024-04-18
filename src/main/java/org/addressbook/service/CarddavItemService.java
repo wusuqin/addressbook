@@ -4,12 +4,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.channels.FileChannel;
+
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.netty.util.internal.StringUtil;
 import java.nio.channels.FileLock;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.logging.Logger;
+import io.quarkus.logging.Log;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,7 +38,6 @@ public class CarddavItemService {
     public final ReentrantReadWriteLock.WriteLock wLock = rwLock.writeLock();
     public final static Map<String, Map<String, Map<String, String>>> syncToken = new HashMap<>();
 
-    static final Logger LOG = Logger.getLogger("addressbook.log");
 
     @SneakyThrows
     public Map<String, Map<String, String>> getSyncToken(String aoId){
@@ -64,7 +65,7 @@ public class CarddavItemService {
             }
         }
         syncToken.put(aoId,Map.of(token, fileMap));
-        LOG.info("sync-token of user "+aoId+" create, token is " + token);
+        Log.info("sync-token of user "+aoId+" create, token is " + token);
         return Map.of(token,fileMap);
     }
 
@@ -80,7 +81,7 @@ public class CarddavItemService {
     }
 
     public List<Item> getItemList(String aoId) {
-        LOG.info("user of " + aoId + " has get the readLock");
+        Log.info("user of " + aoId + " has get the readLock");
         rLock.lock();
         try{
             List<Item> items = new ArrayList<>();
@@ -93,7 +94,7 @@ public class CarddavItemService {
             return items;
         }finally {
             rLock.unlock();
-            LOG.info("user of " + aoId + " release the readLock");
+            Log.info("user of " + aoId + " release the readLock");
         }
     }
 
@@ -176,7 +177,7 @@ public class CarddavItemService {
             try(var inputStream = new FileInputStream(tokenFile);
                 FileChannel channel = inputStream.getChannel();
                 var ignored = channel.lock(0, Long.MAX_VALUE, true);) {
-                return utils.stringToMap(new String(inputStream.readAllBytes()));
+                return objecMapper.readValue(inputStream.readAllBytes(), new TypeReference<Map<String, String>>() {});
             }catch (Exception ie) {
                 return Map.of();
             }
@@ -187,11 +188,11 @@ public class CarddavItemService {
 
     public String writeVcf(String aoId, String body, String vcfId) {
         if(wLock.tryLock()) {
-            LOG.info("writeVcf: user of " + aoId + " has get the writeLock");
+            Log.info("writeVcf: user of " + aoId + " has get the writeLock");
             try{
                 if(syncToken.containsKey(aoId)) {
                     syncToken.remove(aoId);
-                    LOG.info("sync-token of user " + aoId +" remove");
+                    Log.info("sync-token of user " + aoId +" remove");
                 }
                 try(var output = new FileOutputStream(properties.addressbookLocation() + aoId + "/" + vcfId);
                     FileChannel fileChannel = output.getChannel();
@@ -203,17 +204,17 @@ public class CarddavItemService {
                 }
             } finally {
                 wLock.unlock();
-                LOG.info("writeVcf: user of " + aoId + " has release the writeLock");
+                Log.info("writeVcf: user of " + aoId + " has release the writeLock");
             }
         }else{
-            LOG.info("writevf of user "+aoId+" lock failed");
+            Log.info("writevf of user "+aoId+" lock failed");
             return "405";
         }
     }
 
     public String deleteVcfsAll(String aoId) {
         if(wLock.tryLock()) {
-            LOG.info("deleteAllVcfs oper: user of " + aoId + " has get the writeLock");
+            Log.info("deleteAllVcfs oper: user of " + aoId + " has get the writeLock");
             try{
                 syncToken.remove(aoId);
                 List<File> fails = new ArrayList<>();
@@ -226,15 +227,15 @@ public class CarddavItemService {
                     }
                 }
                 if(fails.isEmpty()) {
-                    LOG.info("DeletAllVcf oper: writers of user writes over "+aoId+" is success");
+                    Log.info("DeletAllVcf oper: writers of user writes over "+aoId+" is success");
                     return "200";
                 }else{
-                    LOG.error("DeletaAllVcfs failed, fail file is " + fails.stream().map(File::getName).toList());
+                    Log.error("DeletaAllVcfs failed, fail file is " + fails.stream().map(File::getName).toList());
                     return "405";
                 }
             }finally {
                 wLock.unlock();
-                LOG.info("deleteAllVcfs oper: user of " + aoId + " has release the writeLock");
+                Log.info("deleteAllVcfs oper: user of " + aoId + " has release the writeLock");
             }
         }else{
             return "405";
@@ -243,14 +244,14 @@ public class CarddavItemService {
 
     public String deleteVcf(String aoId, String ifMatch,String href) {
         if(wLock.tryLock()) {
-            LOG.info("deletevcfs: user of " + aoId + " has get the writeLock");
+            Log.info("deletevcfs: user of " + aoId + " has get the writeLock");
             try{
                 File file = new File(properties.addressbookLocation() + aoId + "/" + href);
                 var code = "200";
                 if(file.exists()) {
                     if(syncToken.containsKey(aoId)) {
                         syncToken.remove(aoId);
-                        LOG.info("Delete oper: sync-token of user " + aoId +" remove");
+                        Log.info("Delete oper: sync-token of user " + aoId +" remove");
                     }
                     var item = getItem(file);
                     if(Objects.isNull(ifMatch) || ifMatch.equals("*") || item.getEtag().equals(ifMatch.replace("\"", ""))) {
@@ -264,7 +265,7 @@ public class CarddavItemService {
                 }
             }finally {
                 wLock.unlock();
-                LOG.info("deletevcfs: user of " + aoId + " has release the writeLock");
+                Log.info("deletevcfs: user of " + aoId + " has release the writeLock");
             }
         }else{
             return "405";

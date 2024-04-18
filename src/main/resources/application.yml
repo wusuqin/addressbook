@@ -1,3 +1,6 @@
+quarkus:
+  swagger-ui:
+    always-include: true
 app:
   carddav:
     location: /opt/addressbook/data/
