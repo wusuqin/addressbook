@@ -35,9 +35,9 @@ public class CarddavPropservice {
             if(node.normalName().equalsIgnoreCase(name) ) {
                 for(var child:node.childNodes()) {
                     if(child.normalName().equals("prop")) {
-                        for(var ch:child.childNodes()) {
-                            deepNodes.add(ch);
-                        }
+                        child.childNodes().stream().filter( p -> {
+                           return (p instanceof Element);
+                        }).forEach(deepNodes::add);
                         return deepNodes;
                     }
                 }

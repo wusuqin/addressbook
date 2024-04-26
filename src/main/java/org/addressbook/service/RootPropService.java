@@ -1,5 +1,6 @@
 package org.addressbook.service;
 
+import io.netty.util.internal.StringUtil;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.addressbook.entity.Item;
@@ -227,7 +228,7 @@ public class RootPropService {
                             var href = response.addElement("href");
                             href.setText("/carddav/"+user+"/"+collectId+"/"+key);
                             var status = response.addElement("status");
-                            status.setText(BaseService.HTTP_OK);
+                            status.setText(BaseService.HTTP_NOT_FOUND);
                         }
                     }
                 });
