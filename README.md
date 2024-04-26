@@ -30,3 +30,4 @@ curl -X DELETE http://127.0.0.1:8080/carddav/{user}/{collectid}
 ```
 
 In addition, try to config your carddav server in davx5(or thundbird), nake sure that your carddav client and addressbook application are in the same local area network
+url: http://{ip}:8080/carddav/{user}/ user:{user} password:{password}
