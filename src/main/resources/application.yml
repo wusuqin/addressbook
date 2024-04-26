@@ -1,6 +1,10 @@
 quarkus:
+  http:
+    host: 0.0.0.0
   swagger-ui:
     always-include: true
 app:
   carddav:
     location: /opt/addressbook/data/
+http:
+  host: 0.0.0.0

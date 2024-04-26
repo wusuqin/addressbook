@@ -16,6 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.smallrye.openapi.api.models.links.LinkImpl;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.SneakyThrows;
@@ -32,21 +33,18 @@ public class CarddavItemService {
     @Inject
     ObjectMapper objecMapper;
 
-    public final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
-    public final ReentrantReadWriteLock.ReadLock rLock = rwLock.readLock();
-
-    public final ReentrantReadWriteLock.WriteLock wLock = rwLock.writeLock();
     public final static Map<String, Map<String, Map<String, String>>> syncToken = new HashMap<>();
 
 
     @SneakyThrows
-    public Map<String, Map<String, String>> getSyncToken(String aoId){
+    public Map<String, Map<String, String>> getSyncToken(String user, String collectId){
+        var aoId = user + LockService.LOCK_PREFIX+collectId;
         if(syncToken.containsKey(aoId)) {
             return syncToken.get(aoId);
         }
         var  messageDigest = MessageDigest.getInstance("SHA-256");
         Map<String, String> fileMap = new HashMap<>();
-        var items = getItemList(aoId);
+        var items = getItemList(user, collectId);
         //null标识有用户正在写vcf
         if(Objects.isNull(items)) {
             return null;
@@ -56,7 +54,7 @@ public class CarddavItemService {
             fileMap.put(item.getHref(),item.getEtag());
         }
         var token = Hex.encodeHexString(messageDigest.digest());
-        var file = new File(properties.addressbookLocation() + aoId + File.separator +".cache" +File.separator+"sync-token"+File.separator + token);
+        var file = new File(properties.addressbookLocation() + user + File.separator + collectId + File.separator +".cache" +File.separator+"sync-token"+File.separator + token);
         if(!file.exists()) {
             try(var output = new FileOutputStream(file);
                 FileChannel channel = output.getChannel();
@@ -69,9 +67,9 @@ public class CarddavItemService {
         return Map.of(token,fileMap);
     }
 
-    public String getSyncTokenValue(String aoId) {
+    public String getSyncTokenValue(String user, String collectId) {
         String token = "0";
-        for(var key:getSyncToken(aoId).keySet()) {
+        for(var key:getSyncToken(user,collectId).keySet()) {
             if(!StringUtil.isNullOrEmpty(key)) {
                 token = key;
                 break;
@@ -80,12 +78,15 @@ public class CarddavItemService {
         return token;
     }
 
-    public List<Item> getItemList(String aoId) {
-        Log.info("user of " + aoId + " has get the readLock");
-        rLock.lock();
+    public List<Item> getItemList(String user, String collectId) {
+        Log.info("user of " + user  + " , collection of "+ collectId +" has get the readLock");
+        LockService.initialLockService(user, collectId);
+        var key = user + LockService.LOCK_PREFIX + collectId;
+        var rLock = LockService.lockMap.get(key).readLock();
         try{
+            rLock.lock();
             List<Item> items = new ArrayList<>();
-            var files = new File(properties.addressbookLocation() + aoId);
+            var files = new File(properties.addressbookLocation() + user + File.separator + collectId);
             for(var file: Objects.requireNonNull(files.listFiles())) {
                 if(!file.getName().equals(".props") && file.isFile()) {
                     items.add(getItem(file));
@@ -94,7 +95,7 @@ public class CarddavItemService {
             return items;
         }finally {
             rLock.unlock();
-            Log.info("user of " + aoId + " release the readLock");
+            Log.info("user of " +  user  + " , collection of "+ collectId + " release the readLock");
         }
     }
 
@@ -171,8 +172,8 @@ public class CarddavItemService {
         }
     }
 
-    public Map<String, String> getTokenVcfs(String token,String aoId) {
-        var tokenFile = new File(properties.addressbookLocation() + aoId +"/.cache/sync-token/"+ token );
+    public Map<String, String> getTokenVcfs(String token,String user, String collectId) {
+        var tokenFile = new File(properties.addressbookLocation() + user + File.separator + collectId +"/.cache/sync-token/"+ token );
         if(tokenFile.exists()) {
             try(var inputStream = new FileInputStream(tokenFile);
                 FileChannel channel = inputStream.getChannel();
@@ -186,15 +187,18 @@ public class CarddavItemService {
         }
     }
 
-    public String writeVcf(String aoId, String body, String vcfId) {
+    public String writeVcf(String user,  String collectId, String body, String vcfId) {
+        LockService.initialLockService(user, collectId);
+        var wLock = LockService.lockMap.get(user + LockService.LOCK_PREFIX + collectId).writeLock();
         if(wLock.tryLock()) {
-            Log.info("writeVcf: user of " + aoId + " has get the writeLock");
+            Log.info("writeVcf: user of " + user + "and collection of "+ collectId + " has get the writeLock");
             try{
-                if(syncToken.containsKey(aoId)) {
-                    syncToken.remove(aoId);
-                    Log.info("sync-token of user " + aoId +" remove");
+                var key = user + LockService.LOCK_PREFIX + collectId;
+                if(syncToken.containsKey(key)) {
+                    syncToken.remove(key);
+                    Log.info("sync-token of user " + user + "and collection of "+ collectId +" remove");
                 }
-                try(var output = new FileOutputStream(properties.addressbookLocation() + aoId + "/" + vcfId);
+                try(var output = new FileOutputStream(properties.addressbookLocation() + user + File.separator +  collectId + File.separator + vcfId);
                     FileChannel fileChannel = output.getChannel();
                     FileLock lock = fileChannel.lock()){
                     output.write(body.getBytes());
@@ -204,21 +208,24 @@ public class CarddavItemService {
                 }
             } finally {
                 wLock.unlock();
-                Log.info("writeVcf: user of " + aoId + " has release the writeLock");
+                Log.info("writeVcf: user of " + user + "and collection of "+ collectId  + " has release the writeLock");
             }
         }else{
-            Log.info("writevf of user "+aoId+" lock failed");
+            Log.info("writevf of user "+user + "and collection of "+ collectId +" lock failed");
             return "405";
         }
     }
 
-    public String deleteVcfsAll(String aoId) {
+    public String deleteVcfsAll(String user, String collectId) {
+        LockService.initialLockService(user, collectId);
+        var key = user + LockService.LOCK_PREFIX + collectId;;
+        var wLock = LockService.lockMap.get(key).writeLock();
         if(wLock.tryLock()) {
-            Log.info("deleteAllVcfs oper: user of " + aoId + " has get the writeLock");
+            Log.info("deleteAllVcfs oper: user of " + user + " collection of "+ collectId + " has get the writeLock");
             try{
-                syncToken.remove(aoId);
+                syncToken.remove(key);
                 List<File> fails = new ArrayList<>();
-                var folder =new File(properties.addressbookLocation() + aoId) ;
+                var folder =new File(properties.addressbookLocation() + user + File.separator + collectId) ;
                 for(var file: Objects.requireNonNull(folder.listFiles())) {
                     if(!file.getName().equals(".props") && !file.getName().equals(".cache") ) {
                         if(!file.delete()) {
@@ -227,7 +234,7 @@ public class CarddavItemService {
                     }
                 }
                 if(fails.isEmpty()) {
-                    Log.info("DeletAllVcf oper: writers of user writes over "+aoId+" is success");
+                    Log.info("DeletAllVcf oper: writers of user writes over "+ user + " collection of "+ collectId  +" is success");
                     return "200";
                 }else{
                     Log.error("DeletaAllVcfs failed, fail file is " + fails.stream().map(File::getName).toList());
@@ -235,23 +242,26 @@ public class CarddavItemService {
                 }
             }finally {
                 wLock.unlock();
-                Log.info("deleteAllVcfs oper: user of " + aoId + " has release the writeLock");
+                Log.info("deleteAllVcfs oper: user of " + user + " collection of "+ collectId  + " has release the writeLock");
             }
         }else{
             return "405";
         }
     }
 
-    public String deleteVcf(String aoId, String ifMatch,String href) {
+    public String deleteVcf(String user,  String collectId, String ifMatch,String href) {
+        var key = user + LockService.LOCK_PREFIX + collectId;
+        LockService.initialLockService(user, collectId);
+        var wLock = LockService.lockMap.get(key).writeLock();
         if(wLock.tryLock()) {
-            Log.info("deletevcfs: user of " + aoId + " has get the writeLock");
+            Log.info("deletevcfs: user of " + user + " collection of "+ collectId  + " has get the writeLock");
             try{
-                File file = new File(properties.addressbookLocation() + aoId + "/" + href);
+                File file = new File(properties.addressbookLocation() + user + File.separator+ collectId + File.separator + href);
                 var code = "200";
                 if(file.exists()) {
-                    if(syncToken.containsKey(aoId)) {
-                        syncToken.remove(aoId);
-                        Log.info("Delete oper: sync-token of user " + aoId +" remove");
+                    if(syncToken.containsKey(key)) {
+                        syncToken.remove(key);
+                        Log.info("Delete oper: sync-token of user " + user + " collection of "+ collectId  +" remove");
                     }
                     var item = getItem(file);
                     if(Objects.isNull(ifMatch) || ifMatch.equals("*") || item.getEtag().equals(ifMatch.replace("\"", ""))) {
@@ -265,7 +275,7 @@ public class CarddavItemService {
                 }
             }finally {
                 wLock.unlock();
-                Log.info("deletevcfs: user of " + aoId + " has release the writeLock");
+                Log.info("deletevcfs: user of " + user + " collection of "+ collectId  + " has release the writeLock");
             }
         }else{
             return "405";
