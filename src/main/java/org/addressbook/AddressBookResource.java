@@ -283,7 +283,7 @@ public class AddressBookResource {
 	@MKCOL
 	@Path("/{user}/{collectId}")
 	@Produces(MediaType.TEXT_PLAIN)
-    @Consumes({MediaType.TEXT_XML, MediaType.TEXT_HTML})
+    @Consumes({MediaType.TEXT_XML, MediaType.TEXT_HTML, MediaType.APPLICATION_XML})
 	public Response createAddressbook(@HeaderParam("Authorization") String security,
                                       @PathParam("user") String user,
 									  @PathParam("collectId") String collectId,  String body){

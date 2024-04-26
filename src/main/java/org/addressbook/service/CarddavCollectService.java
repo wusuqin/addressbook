@@ -82,11 +82,11 @@ public class CarddavCollectService {
             } else if (node.normalName().matches("([0-9a-zA-Z-]+:)?displayname")) {
                 var p = (TextNode)node.firstChild();
                 assert p != null;
-                propMap.put(node.normalName(),p.text());
+                propMap.put("displayname",p.text());
             } else if(node.normalName().matches("([0-9a-zA-Z-]+:)?addressbook-description")) {
                 var p = (TextNode)node.firstChild();
                 assert p != null;
-                propMap.put(node.normalName(), p.text());
+                propMap.put("cr:addressbook-description", p.text());
             }
         }
         try(var outputstream = new FileOutputStream(propFile)) {
