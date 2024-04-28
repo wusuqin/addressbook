@@ -9,7 +9,7 @@ Some signicant defects are list as above:
 
 ## configs 
 
-Addresbook users  and collections are saved under the path /opt/addresbbok/data
+Addresbook user and collection profiles are saved under the path /opt/addresbbok/data
 
 With postman or a cli terminal, you create a user with password by running the following command.
 
