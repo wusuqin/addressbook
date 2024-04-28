@@ -4,8 +4,8 @@ Addressbook  is a simple carddav server. With this application you can share you
 Some signicant defects are list as above:
 - AddressBook applications does not have a web home page, instead you can use swagger-ui to create users or collections;
 - Addressbook application does not offer caldav abilities；
-- davX5 and thundbird(the haven been test) can run correctly with this application, macos were not test;
-- this application only be test on local area network;
+- Interactins test with davX5 and thundbird(the haven been test) have done and it can run correctly, but tests are not ye notarizrd for macos;
+- Addrssbook application only be test on local area network;
 
 ## configs 
 
